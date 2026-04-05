@@ -31,7 +31,7 @@ def get_news():
     articles = response.json()["articles"]
     return [a["title"] for a in articles[:10]]
 
-#part 4:ask claude to input new sources and determine mispricings 
+#part 4:ask claude to input new sources and determine mispricings as well as a confidence interval for the importance of the singal on a scale of 1-10
 import anthropic
 
 def analyze(headlines, markets):
@@ -56,8 +56,21 @@ def analyze(headlines, markets):
     1. Which market it affects
     2. Whether it makes YES or NO more likely
     3. If the current price seems wrong given the news (mispriced)
+    4. A confidence score from 1-10 where:
+       - 1-3 = weak signal, probably ignore
+       - 4-6 = moderate signal, worth watching
+       - 7-10 = strong signal, worth acting on
 
-    Be concise. Only flag real mispricings.
+    Format each signal exactly like this:
+    SIGNAL
+    Headline: [headline]
+    Market: [market name]
+    Direction: [YES or NO]
+    Reasoning: [one sentence why]
+    Confidence: [number]/10
+    END
+
+    Only include signals with a confidence of 5 or higher.
     """
 
     message = client.messages.create(
@@ -77,7 +90,41 @@ while True:
     print("\n--- Checking for signals ---")
     headlines = get_news()
     markets = get_markets()
-    signals = analyze(headlines, markets)
-    print(signals)
+    raw_signals = analyze(headlines, markets)
+    
+    # Split into individual signals
+    signals = raw_signals.split("SIGNAL")
+    
+    strong = []
+    moderate = []
+    
+    for signal in signals:
+        if "Confidence:" not in signal:
+            continue
+        # Pull out the confidence number
+        try:
+            score_line = [l for l in signal.split("\n") if "Confidence:" in l][0]
+            score = int(score_line.replace("Confidence:", "").replace("/10", "").strip())
+        except:
+            continue
+        
+        if score >= 7:
+            strong.append((score, signal.strip()))
+        elif score >= 5:
+            moderate.append((score, signal.strip()))
+    
+    # Print strong signals first
+    if strong:
+        print("\n🔥 STRONG SIGNALS (7+):")
+        for score, s in sorted(strong, reverse=True):
+            print(f"\n{s}")
+    
+    if moderate:
+        print("\n👀 MODERATE SIGNALS (5-6):")
+        for score, s in sorted(moderate, reverse=True):
+            print(f"\n{s}")
+    
+    if not strong and not moderate:
+        print("\n✅ No strong signals right now. Checking again in 5 minutes...")
     print("\nWaiting 3 minutes before next check...")
     time.sleep(180)  # wait 3 minutes, then repeat
